@@ -1565,7 +1565,20 @@ function init() {
 
   // Offline support when served over http(s); not available from file://
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
+    const hadController = Boolean(navigator.serviceWorker.controller);
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(reg => {
+      // Installed apps are often resumed rather than relaunched, so check for updates on resume too
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update(); });
+    }).catch(() => {});
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (hadController) location.reload();
+    });
+  }
+  if (window.caches && location.protocol.startsWith('http')) {
+    caches.keys().then(keys => {
+      const v = keys.find(k => k.startsWith('pulse-'));
+      if (v) $('#appVersion').textContent = `Version ${v.replace('pulse-', '')}`;
+    });
   }
 }
 
