@@ -513,6 +513,53 @@ select option { background: var(--surface); color: var(--text); }
 .add-food { align-self: flex-start; }
 .foods-layout { display: grid; gap: 18px; }
 
+/* Photo meal recognition */
+.photo-btn {
+  position: relative; display: flex; align-items: center; gap: 14px;
+  padding: 16px; border-radius: 18px; cursor: pointer;
+  background: linear-gradient(135deg, rgba(37, 99, 235, .28), rgba(139, 92, 246, .18)), var(--surface-2);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  transition: transform .15s var(--ease), border-color .2s;
+  -webkit-tap-highlight-color: transparent;
+}
+.photo-btn:hover { border-color: var(--accent); }
+.photo-btn:active { transform: scale(.98); }
+.photo-btn:focus-within { outline: 2px solid var(--accent-light); outline-offset: 2px; }
+.photo-btn input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.photo-btn strong { display: block; font-size: 16px; }
+.photo-btn small { display: block; font-size: 13px; color: var(--text-2); }
+.photo-btn-icon {
+  width: 48px; height: 48px; flex-shrink: 0; display: grid; place-items: center; border-radius: 14px;
+  background: var(--accent); color: #fff; box-shadow: 0 8px 20px -8px rgba(37, 99, 235, .9);
+}
+.photo-btn-icon .icon { width: 24px; height: 24px; }
+.photo-spark { margin-left: auto; color: var(--accent-text); }
+.photo-panel {
+  display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 14px; align-items: start;
+  margin-top: 12px; padding: 12px; border-radius: 16px;
+  background: var(--surface-2); border: 1px solid var(--border); animation: fadeUp .3s var(--ease) both;
+}
+.photo-thumb { position: relative; width: 96px; height: 96px; border-radius: 12px; overflow: hidden; background: var(--surface-3); }
+.photo-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.photo-thumb.scanning::after {
+  content: ''; position: absolute; left: 0; right: 0; height: 35%;
+  background: linear-gradient(180deg, transparent, rgba(96, 165, 250, .6), transparent);
+  animation: scan 1.4s ease-in-out infinite;
+}
+.scan-title { font-weight: 700; margin-bottom: 4px; }
+.scan-status { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--text-2); }
+.scan-error { font-size: 13px; color: var(--danger); }
+.scan-items { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.scan-chip { padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--surface-3); border: 1px solid transparent; }
+.scan-chip.low { border: 1px dashed var(--warning); }
+.photo-panel .fine-print { margin-top: 4px; }
+.spinner { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--surface-3); border-top-color: var(--accent-light); animation: spin .8s linear infinite; }
+.divider { display: flex; align-items: center; gap: 12px; margin: 18px 0; font-size: 12px; font-weight: 600; color: var(--text-3); text-transform: uppercase; letter-spacing: .06em; }
+.divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: var(--border-strong); }
+.btn-row { display: flex; flex-wrap: wrap; gap: 10px; }
+.btn-row .btn { flex: 1; }
+.card-sub a, .fine-print a { color: var(--accent-text); text-decoration: underline; }
+
 /* ---------- 9. History ---------- */
 .date-nav { display: flex; align-items: center; gap: 6px; }
 .date-nav input { flex: 1; min-width: 0; text-align: center; font-weight: 600; }
@@ -622,6 +669,8 @@ select option { background: var(--surface); color: var(--text); }
 @keyframes grow { from { width: 0; } }
 @keyframes flicker { 0%, 100% { transform: scale(1) rotate(0); } 50% { transform: scale(1.1) rotate(-4deg); } }
 @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
+@keyframes scan { from { top: -35%; } to { top: 100%; } }
+@keyframes spin { to { transform: rotate(360deg); } }
 
 /* ---------- 13. Responsive ---------- */
 @media (max-width: 420px) {

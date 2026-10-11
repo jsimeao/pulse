@@ -1,6 +1,6 @@
 /* Pulse service worker: always loads the latest app files when online, falls back to cache offline.
    Bump CACHE when releasing changes so phones pick up the new version. */
-const CACHE = 'pulse-v3';
+const CACHE = 'pulse-v4';
 const APP_SHELL = [
   './',
   './index.html',
@@ -30,6 +30,7 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   const { request } = event;
   if (request.method !== 'GET' || !request.url.startsWith('http')) return;
+  if (request.url.includes('generativelanguage.googleapis.com')) return; // AI API: never cache
   const sameOrigin = new URL(request.url).origin === self.location.origin;
 
   event.respondWith(caches.open(CACHE).then(async cache => {

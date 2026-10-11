@@ -13,6 +13,7 @@ const STORAGE_KEYS = {
   weights: 'pulse.weights',
   settings: 'pulse.settings',
   foods: 'pulse.foods',
+  ai: 'pulse.ai',
 };
 
 const DEFAULT_SETTINGS = { calorieTarget: 2200, weightGoal: 75, weeklyWorkoutGoal: 4, theme: 'dark' };
@@ -94,6 +95,9 @@ const INTENSITY_INDEX = { light: 0, moderate: 1, vigorous: 2 };
 const ACTIVITY_LEVELS = { sedentary: 1.2, light: 1.35, active: 1.5, very: 1.7 };
 const DEFAULT_WEIGHT_KG = 70;
 const KCAL_PER_KG_FAT = 7700;
+const AI_DEFAULT_MODEL = 'gemini-flash-latest';
+const AI_MODEL_RE = /^[a-z0-9][a-z0-9.\-]{2,60}$/i;
+const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/';
 
 // [name, kcal per 100 g (or 100 ml), portion label, portion grams, isLiquid]
 const FOOD_DB = [
@@ -228,6 +232,7 @@ const state = {
   trendMode: 'calories',
   balanceRange: 'week',
   activityMode: 'gym',
+  ai: { apiKey: '', model: 'gemini-flash-latest' },
   historyDate: todayISO(),
   charts: {},
 };
@@ -257,6 +262,11 @@ function loadState() {
     .map(f => ({ id: String(f.id || uid()), name: String(f.name), kcal: Number(f.kcal), portion: f.portion && Number(f.portion.g) > 0 ? { label: String(f.portion.label), g: Number(f.portion.g) } : null }));
 
   const s = Store.load(STORAGE_KEYS.settings, {});
+  const ai = Store.load(STORAGE_KEYS.ai, {}) || {};
+  state.ai = {
+    apiKey: typeof ai.apiKey === 'string' ? ai.apiKey : '',
+    model: AI_MODEL_RE.test(ai.model || '') ? ai.model : AI_DEFAULT_MODEL,
+  };
   state.settings = { ...DEFAULT_SETTINGS, ...(s && typeof s === 'object' ? s : {}) };
   const p = state.settings.profile || {};
   state.settings.profile = {
@@ -394,7 +404,12 @@ function rebuildFoodIndex() {
     .map(f => `<option value="${escapeHTML(f.name)}">${f.kcal} kcal / 100 ${f.base}${f.custom ? ' · my food' : ''}</option>`).join('');
 }
 
-const lookupFood = name => foodIndex.get(String(name).trim().toLowerCase()) || null;
+const lookupFood = name => {
+  const key = String(name).trim().toLowerCase();
+  return foodIndex.get(key) || aiFoods.get(key) || null;
+};
+// Foods estimated by the photo AI that aren't in the database; kept only for the meal being entered
+const aiFoods = new Map();
 
 function buildMealItem(food, qty, usePortion) {
   const portion = usePortion && food.portion;
@@ -1098,6 +1113,8 @@ function handleMealSubmit(e) {
   f.namedItem('name').value = '';
   f.namedItem('time').value = nowTime();
   $('#mealItems').innerHTML = '';
+  aiFoods.clear();
+  $('#photoPanel').hidden = true;
   showToast(date === todayISO() ? `${name} saved · ${fmtNum(calories)} kcal` : `${name} saved to ${relativeDay(date)}`);
   refresh();
 }
@@ -1120,6 +1137,179 @@ function handleFoodSubmit(e) {
   e.target.reset();
   showToast(`${name} added to your foods`);
   refresh();
+}
+
+/* -------------------------------------------------------------------------
+   10b. Photo meal recognition (Google Gemini)
+   ------------------------------------------------------------------------- */
+/** Downscale a photo to max 1024 px JPEG to keep the upload small. */
+async function prepareImage(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+    const scale = Math.min(1, 1024 / Math.max(img.naturalWidth, img.naturalHeight));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(img.naturalWidth * scale);
+    canvas.height = Math.round(img.naturalHeight * scale);
+    canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+    return { dataUrl, base64: dataUrl.split(',')[1] };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+const MEAL_SCHEMA = {
+  type: 'object',
+  properties: {
+    is_food: { type: 'boolean', description: 'False if the photo does not show food or drink.' },
+    meal_name: { type: 'string', description: 'Short name for the meal, e.g. "Grilled salmon with rice".' },
+    items: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'Food as seen in the photo.' },
+          match: { type: 'string', description: 'Exact name from the provided food list, or empty string if none fits.' },
+          grams: { type: 'number', description: 'Estimated portion weight in grams (ml for drinks).' },
+          kcal_per_100g: { type: 'number', description: 'Estimated calories per 100 g of this food as served.' },
+          confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
+        },
+        required: ['name', 'match', 'grams', 'kcal_per_100g', 'confidence'],
+      },
+    },
+  },
+  required: ['is_food', 'meal_name', 'items'],
+};
+
+async function analyzeMealPhoto(base64) {
+  const foodNames = [...FOOD_DB.map(f => f.name), ...state.foods.map(f => f.name)].join('; ');
+  const prompt = 'You are a nutrition assistant. Identify every distinct food and drink visible in this meal photo, '
+    + 'including sauces, oils and sides. Estimate each portion weight in grams (ml for drinks) using visual cues such as '
+    + 'plate size (~26 cm), cutlery and typical serving sizes. If an item matches a food in this list, set "match" to the '
+    + `exact list name, otherwise use an empty string. Always give kcal_per_100g for the item as served. Food list: ${foodNames}`;
+
+  const res = await fetch(`${GEMINI_BASE}${encodeURIComponent(state.ai.model)}:generateContent`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': state.ai.apiKey },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType: 'image/jpeg', data: base64 } }] }],
+      generationConfig: { responseMimeType: 'application/json', responseJsonSchema: MEAL_SCHEMA, temperature: 0.2 },
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error?.message || `Request failed (${res.status})`);
+  if (data.promptFeedback?.blockReason) throw new Error('The photo was blocked by the AI safety filter.');
+  const text = data.candidates?.[0]?.content?.parts?.find(p => p.text && !p.thought)?.text;
+  if (!text) throw new Error('No answer from the AI. Please try again.');
+  return JSON.parse(text);
+}
+
+/** Turn AI items into food rows: database values when matched, AI estimate otherwise. */
+function fillMealFromAI(result) {
+  aiFoods.clear();
+  $('#mealItems').innerHTML = '';
+  const rows = [];
+  (Array.isArray(result.items) ? result.items : []).slice(0, 15).forEach(it => {
+    const grams = Math.round(clamp(Number(it.grams) || 0, 1, 3000));
+    let food = lookupFood(it.match || '') || lookupFood(it.name || '');
+    if (!food) {
+      const name = `${String(it.name || 'Food').trim().slice(0, 40)} (AI estimate)`;
+      food = { name, kcal: Math.round(clamp(Number(it.kcal_per_100g) || 0, 0, 900)), portion: null, base: 'g', ai: true };
+      aiFoods.set(name.toLowerCase(), food);
+    }
+    addFoodRow();
+    const row = $('#mealItems .food-row:last-child');
+    row.querySelector('.food-name').value = food.name;
+    syncFoodRow(row, food);
+    row.querySelector('.food-unit').value = 'base';
+    row.querySelector('.food-qty').value = grams;
+    rows.push({ label: it.name || food.name, grams, base: food.base, kcal: Math.round((grams * food.kcal) / 100), low: it.confidence === 'low', ai: Boolean(food.ai) });
+  });
+  if (!rows.length) addFoodRow();
+  const nameInput = $('#mName');
+  if (!nameInput.value.trim() && result.meal_name) nameInput.value = String(result.meal_name).slice(0, 60);
+  updateMealTotal();
+  return rows;
+}
+
+async function handleMealPhoto(e) {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  if (!file.type.startsWith('image/')) return showToast('Please choose a photo', 'error');
+
+  const panel = $('#photoPanel');
+  panel.hidden = false;
+  let img;
+  try {
+    img = await prepareImage(file);
+  } catch {
+    panel.innerHTML = '<p class="scan-error">This photo format could not be read. Try a JPEG or PNG.</p>';
+    return;
+  }
+  const thumb = `<div class="photo-thumb"><img src="${img.dataUrl}" alt="Meal photo" /></div>`;
+  panel.innerHTML = thumb.replace('photo-thumb', 'photo-thumb scanning')
+    + '<div><p class="scan-title">Analysing your plate…</p><p class="scan-status"><span class="spinner"></span>Identifying foods and portions</p></div>';
+
+  try {
+    const result = await analyzeMealPhoto(img.base64);
+    if (result.is_food === false || !result.items?.length) {
+      panel.innerHTML = `${thumb}<div><p class="scan-title">No food found</p><p class="scan-error">Try another photo taken from above, with the whole plate visible.</p></div>`;
+      return;
+    }
+    const rows = fillMealFromAI(result);
+    const total = rows.reduce((t, r) => t + r.kcal, 0);
+    panel.innerHTML = `${thumb}<div>
+      <p class="scan-title">${rows.length} item${rows.length === 1 ? '' : 's'} found · ${fmtNum(total)} kcal</p>
+      <div class="scan-items">${rows.map(r => `<span class="scan-chip ${r.low ? 'low' : ''}" title="${r.low ? 'Low confidence' : ''}">${escapeHTML(r.label)} · ${r.grams} ${r.base}</span>`).join('')}</div>
+      <p class="fine-print">Check the foods and amounts below, adjust if needed, then tap <strong>Save meal</strong>.${rows.some(r => r.ai) ? ' Items marked "AI estimate" are not in the food database.' : ''}</p>
+    </div>`;
+    $('#mealItems').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  } catch (err) {
+    const offline = !navigator.onLine;
+    panel.innerHTML = `${thumb}<div><p class="scan-title">Couldn't analyse the photo</p>
+      <p class="scan-error">${escapeHTML(offline ? 'You are offline. Connect to the internet and try again.' : err.message)}</p></div>`;
+  }
+}
+
+function renderAISettings() {
+  const f = $('#aiForm').elements;
+  f.namedItem('apiKey').value = state.ai.apiKey;
+  f.namedItem('model').value = state.ai.model;
+  $('#aiStatus').textContent = state.ai.apiKey ? 'Key saved' : 'Not set up';
+}
+
+async function handleAISubmit(e) {
+  e.preventDefault();
+  const f = e.target.elements;
+  const apiKey = f.namedItem('apiKey').value.trim();
+  const model = f.namedItem('model').value.trim() || AI_DEFAULT_MODEL;
+  if (!/^[A-Za-z0-9_\-.]{20,200}$/.test(apiKey)) return markInvalid(f.namedItem('apiKey'), 'That does not look like a valid API key');
+  if (!AI_MODEL_RE.test(model)) return markInvalid(f.namedItem('model'), 'Invalid model name');
+
+  state.ai = { apiKey, model };
+  Store.save(STORAGE_KEYS.ai, state.ai);
+  $('#aiStatus').textContent = 'Checking…';
+  try {
+    const res = await fetch(`${GEMINI_BASE}${encodeURIComponent(model)}`, { headers: { 'x-goog-api-key': apiKey } });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error?.message || `Error ${res.status}`);
+    $('#aiStatus').textContent = 'Connected ✓';
+    showToast('API key saved and verified');
+  } catch (err) {
+    $('#aiStatus').textContent = 'Key saved, not verified';
+    showToast(`Saved, but verification failed: ${err.message}`, 'error');
+  }
+  updatePhotoHint();
+}
+
+function updatePhotoHint() {
+  $('#photoHint').textContent = state.ai.apiKey
+    ? 'AI identifies the foods and calculates the calories'
+    : 'Set up a free Gemini API key in Settings to enable';
 }
 
 /* -------------------------------------------------------------------------
@@ -1195,6 +1385,7 @@ function renderSettings() {
   f.namedItem('weightGoal').value = state.settings.weightGoal;
   f.namedItem('weeklyWorkoutGoal').value = state.settings.weeklyWorkoutGoal;
   $('#themeSwitch').checked = state.settings.theme === 'dark';
+  renderAISettings();
 }
 
 function handleSettingsSubmit(e) {
@@ -1517,6 +1708,25 @@ function bindEvents() {
     if (btn) setActivityMode(btn.dataset.kind);
   });
 
+  // Photo recognition
+  $('#photoBtn').addEventListener('click', e => {
+    if (state.ai.apiKey) return;
+    e.preventDefault();
+    showToast('Add your free Gemini API key in Settings first', 'error');
+    location.hash = '#settings';
+    setTimeout(() => $('#aiKey').focus(), 400);
+  });
+  $('#mealPhoto').addEventListener('change', handleMealPhoto);
+  $('#aiForm').addEventListener('submit', handleAISubmit);
+  $('#aiRemove').addEventListener('click', () => {
+    if (!state.ai.apiKey || !confirm('Remove the Gemini API key from this device?')) return;
+    state.ai = { apiKey: '', model: state.ai.model };
+    Store.save(STORAGE_KEYS.ai, state.ai);
+    renderAISettings();
+    updatePhotoHint();
+    showToast('API key removed');
+  });
+
   // History filter
   $('#histDate').addEventListener('change', e => { if (isISO(e.target.value)) { state.historyDate = e.target.value; renderHistory(); } });
   $('#histPrev').addEventListener('click', () => { state.historyDate = addDays(state.historyDate, -1); renderHistory(); });
@@ -1561,6 +1771,7 @@ function init() {
     .map(([name]) => `<option value="${name}">${name}</option>`).join('')}</optgroup>`).join('');
 
   bindEvents();
+  updatePhotoHint();
   setView(location.hash.slice(1));
 
   // Offline support when served over http(s); not available from file://
