@@ -18,17 +18,75 @@ const STORAGE_KEYS = {
 const DEFAULT_SETTINGS = { calorieTarget: 2200, weightGoal: 75, weeklyWorkoutGoal: 4, theme: 'dark' };
 const DEFAULT_PROFILE = { sex: '', birthDate: '', height: null, activity: 'light' };
 
-// met = [light, moderate, vigorous] MET values (Compendium of Physical Activities)
-const WORKOUT_TYPES = [
-  { name: 'Chest', color: '#3B82F6', icon: 'i-dumbbell', met: [3.5, 5, 6] },
-  { name: 'Back', color: '#8B5CF6', icon: 'i-dumbbell', met: [3.5, 5, 6] },
-  { name: 'Legs', color: '#10B981', icon: 'i-dumbbell', met: [3.5, 5, 6] },
-  { name: 'Shoulders', color: '#F59E0B', icon: 'i-dumbbell', met: [3.5, 5, 6] },
-  { name: 'Arms', color: '#EC4899', icon: 'i-dumbbell', met: [3.5, 5, 6] },
-  { name: 'Cardio', color: '#EF4444', icon: 'i-pulse', met: [4, 7, 10] },
-  { name: 'Other', color: '#64748B', icon: 'i-bolt', met: [3, 4.5, 6.5] },
+// MET values and activity codes from the 2024 Adult Compendium of Physical Activities (pacompendium.com).
+// Each activity has [light, moderate, vigorous] levels.
+const L = (met, code, desc) => ({ met, code, desc });
+const STRENGTH = [
+  L(3.5, '02054', 'Weights, 8-15 reps, varied resistance'),
+  L(5.0, '02052', 'Weights, squats/deadlifts, slow or explosive'),
+  L(6.0, '02050', 'Weights, power lifting or body building'),
 ];
-const TYPE_MAP = Object.fromEntries(WORKOUT_TYPES.map(t => [t.name, t]));
+const WORKOUT_TYPES = [
+  { name: 'Chest', color: '#3B82F6', icon: 'i-dumbbell', levels: STRENGTH },
+  { name: 'Back', color: '#8B5CF6', icon: 'i-dumbbell', levels: STRENGTH },
+  { name: 'Legs', color: '#10B981', icon: 'i-dumbbell', levels: STRENGTH },
+  { name: 'Shoulders', color: '#F59E0B', icon: 'i-dumbbell', levels: STRENGTH },
+  { name: 'Arms', color: '#EC4899', icon: 'i-dumbbell', levels: STRENGTH },
+  { name: 'Cardio', color: '#EF4444', icon: 'i-pulse', levels: [L(5.0, '02048', 'Elliptical, moderate effort'), L(7.3, '02000', 'Aerobic exercise, general'), L(9.0, '02049', 'Elliptical, vigorous effort')] },
+  { name: 'Other', color: '#64748B', icon: 'i-bolt', levels: [L(3.0, '02056', 'Body weight exercises, general'), L(3.8, '02022', 'Calisthenics, moderate effort'), L(7.5, '02020', 'Calisthenics, vigorous effort')] },
+];
+
+// Padel has no Compendium entry: uses tennis doubles (light) and paddleball (moderate/vigorous) values.
+const SPORT_GROUPS = [
+  { group: 'Racket sports', color: '#14B8A6', icon: 'i-ball', sports: [
+    ['Tennis', [4.5, '15685', 'Doubles'], [6.8, '15675', 'General, moderate effort'], [8.0, '15676', 'General, competitive']],
+    ['Padel', [4.5, '15685', 'Recreational doubles'], [6.0, '15500', 'Casual game'], [10.0, '15490', 'Competitive game']],
+    ['Squash', [7.3, '15652', 'General'], [7.3, '15652', 'General'], [12.0, '15650', 'Intense play']],
+    ['Badminton', [5.5, '15030', 'Social, singles or doubles'], [7.0, '15020', 'Competitive'], [9.0, '15025', 'Competitive match play']],
+    ['Table tennis', [4.0, '15660', 'Ping pong'], [4.0, '15660', 'Ping pong'], [4.0, '15660', 'Ping pong']],
+  ] },
+  { group: 'Endurance', color: '#0EA5E9', icon: 'i-pulse', sports: [
+    ['Running', [7.5, '12020', 'Jogging, self-selected pace'], [9.3, '12050', 'About 10 km/h (6 min/km)'], [11.8, '12080', 'About 12 km/h (5 min/km)']],
+    ['Walking', [3.8, '17190', '4.5-5.5 km/h, moderate pace'], [4.8, '17200', '5.6-6.3 km/h, brisk'], [5.5, '17220', '6.4-7.1 km/h, very brisk']],
+    ['Hiking', [3.8, '17081', 'Slow, no load'], [5.3, '17082', 'Normal pace, no load'], [7.8, '17012', 'With a daypack']],
+    ['Cycling', [5.8, '01019', 'Leisure, about 15 km/h'], [8.0, '01030', '19-22 km/h, moderate'], [10.0, '01040', '22-26 km/h, fast']],
+    ['Indoor cycling', [5.0, '01216', 'Stationary, about 60 W'], [6.8, '01200', 'Stationary, general'], [9.0, '01270', 'Spin class']],
+    ['Swimming', [5.8, '18240', 'Freestyle, slow, recreational'], [8.0, '18290', 'Crawl, medium speed'], [9.8, '18230', 'Freestyle, fast']],
+    ['Rowing machine', [5.0, '02071', 'Under 100 W'], [7.5, '02072', '100-149 W'], [11.0, '02073', '150-199 W']],
+    ['Elliptical', [5.0, '02048', 'Moderate effort'], [5.0, '02048', 'Moderate effort'], [9.0, '02049', 'Vigorous effort']],
+  ] },
+  { group: 'Team sports', color: '#F97316', icon: 'i-ball', sports: [
+    ['Football (soccer)', [7.0, '15610', 'Casual'], [7.0, '15610', 'Casual'], [9.5, '15605', 'Competitive']],
+    ['Basketball', [5.0, '15070', 'Shooting baskets'], [7.5, '15055', 'General'], [8.0, '15040', 'Game']],
+    ['Volleyball', [3.0, '15720', 'Non-competitive'], [6.0, '15711', 'Competitive, indoor'], [8.0, '15725', 'Beach, in sand']],
+    ['Rugby', [6.3, '15562', 'Touch, non-competitive'], [6.3, '15562', 'Touch, non-competitive'], [8.3, '15560', 'Union, competitive']],
+  ] },
+  { group: 'Fitness classes', color: '#A855F7', icon: 'i-bolt', sports: [
+    ['HIIT / CrossFit', [3.5, '02034', 'Circuit training, light'], [7.0, '02210', 'High intensity intervals, moderate'], [11.0, '02214', 'High intensity intervals, vigorous']],
+    ['Dance / Zumba', [4.8, '02005', 'Aerobic dance, low impact'], [7.3, '02000', 'Aerobic, general'], [8.0, '02006', 'Aerobic dance, high impact']],
+    ['Yoga', [2.3, '02150', 'Hatha'], [2.7, '02185', 'Vinyasa'], [4.0, '02160', 'Power yoga']],
+    ['Pilates', [1.8, '02103', 'Mat, traditional'], [2.8, '02105', 'General'], [2.8, '02105', 'General']],
+    ['Jump rope', [9.0, '02069', '120 jumps/min'], [11.0, '02068', 'General'], [11.0, '02068', 'General']],
+  ] },
+  { group: 'Combat sports', color: '#DC2626', icon: 'i-bolt', sports: [
+    ['Boxing', [5.8, '15110', 'Punching bag'], [7.8, '15120', 'Sparring'], [12.3, '15100', 'In ring']],
+    ['Kickboxing', [7.3, '15457', 'General'], [7.3, '15457', 'General'], [7.3, '15457', 'General']],
+    ['Martial arts', [5.3, '15425', 'Slower pace, practice'], [10.3, '15430', 'Moderate pace (judo, karate...)'], [10.3, '15430', 'Moderate pace (judo, karate...)']],
+  ] },
+  { group: 'Outdoor & water', color: '#06B6D4', icon: 'i-ball', sports: [
+    ['Climbing', [5.8, '15537', 'Low-to-moderate difficulty'], [7.3, '15535', 'High difficulty'], [8.8, '15534', 'Bouldering']],
+    ['Golf', [3.5, '15290', 'Using power cart'], [4.3, '15265', 'Walking, carrying clubs'], [4.5, '15285', 'Walking, pulling clubs']],
+    ['Surfing', [3.0, '18220', 'General'], [3.0, '18220', 'General'], [5.0, '18222', 'Competitive']],
+    ['Stand-up paddle', [3.8, '18226', '20-29 strokes/min'], [6.5, '18224', 'General'], [9.8, '18228', '40-49 strokes/min']],
+    ['Kayaking', [5.0, '18100', 'Moderate effort'], [5.0, '18100', 'Moderate effort'], [12.5, '18060', 'Competition, vigorous']],
+    ['Skiing / snowboarding', [4.3, '19150', 'Light effort'], [6.3, '19160', 'Moderate effort'], [8.0, '19170', 'Vigorous effort']],
+    ['Roller skating', [7.0, '15590', 'General'], [7.0, '15590', 'General'], [7.0, '15590', 'General']],
+  ] },
+];
+const SPORTS = SPORT_GROUPS.flatMap(g => g.sports.map(([name, ...lv]) => (
+  { name, color: g.color, icon: g.icon, sport: true, levels: lv.map(([met, code, desc]) => L(met, code, desc)) })));
+const ALL_ACTIVITIES = [...WORKOUT_TYPES, ...SPORTS];
+const TYPE_MAP = Object.fromEntries(ALL_ACTIVITIES.map(t => [t.name, t]));
 const INTENSITIES = { light: 'Light', moderate: 'Moderate', vigorous: 'Vigorous' };
 const INTENSITY_INDEX = { light: 0, moderate: 1, vigorous: 2 };
 
@@ -169,6 +227,7 @@ const state = {
   view: 'dashboard',
   trendMode: 'calories',
   balanceRange: 'week',
+  activityMode: 'gym',
   historyDate: todayISO(),
   charts: {},
 };
@@ -295,11 +354,11 @@ function profileReady() {
   return Boolean(p.sex && p.birthDate && p.height && weightFor(todayISO()));
 }
 
-/** Net workout calories: (MET - 1) x kg x hours, so resting energy isn't counted twice with BMR. */
+/** Net activity calories: (MET - 1) x kg x hours, so resting energy isn't counted twice with BMR. */
+const activityLevel = w => (TYPE_MAP[w.type] || TYPE_MAP.Other).levels[INTENSITY_INDEX[w.intensity] ?? 1];
 function workoutBurn(w) {
-  const met = (TYPE_MAP[w.type] || TYPE_MAP.Other).met[INTENSITY_INDEX[w.intensity] ?? 1];
   const kg = weightFor(w.date || todayISO()) || DEFAULT_WEIGHT_KG;
-  return Math.round((met - 1) * kg * (w.duration / 60));
+  return Math.round((activityLevel(w).met - 1) * kg * (w.duration / 60));
 }
 const burnOf = list => list.reduce((s, w) => s + workoutBurn(w), 0);
 
@@ -557,7 +616,7 @@ function renderDashboard() {
   // Muscle groups trained this week
   const counts = {};
   weekWorkouts.forEach(w => { counts[w.type] = (counts[w.type] || 0) + 1; });
-  $('#muscleMeta').textContent = `${Object.keys(counts).length} of ${WORKOUT_TYPES.length} this week`;
+  $('#muscleMeta').textContent = `${WORKOUT_TYPES.filter(t => counts[t.name]).length} of ${WORKOUT_TYPES.length} this week`;
   $('#muscleGrid').innerHTML = WORKOUT_TYPES.map(t => `<div class="muscle ${counts[t.name] ? 'hit' : ''}" style="--c:${t.color}">
       <span class="muscle-dot"></span><span class="muscle-name">${t.name}</span>
       <span class="muscle-count">${counts[t.name] ? `${counts[t.name]}×` : '—'}</span>
@@ -733,7 +792,7 @@ function renderTrendChart() {
     };
     opts.plugins.tooltip.callbacks = { label: c => `${c.dataset.label}: ${fmtNum(c.parsed.y)} kcal` };
   } else {
-    const datasets = WORKOUT_TYPES.map(type => ({
+    const datasets = ALL_ACTIVITIES.map(type => ({
       label: type.name,
       data: days.map(d => minutesOf(weekWorkouts.filter(w => w.date === d && w.type === type.name))),
       backgroundColor: type.color, borderRadius: 6, borderSkipped: false, maxBarThickness: 30,
@@ -871,27 +930,40 @@ function renderWorkouts() {
 }
 
 /** Live calorie estimate for the workout being entered. */
+const selectedActivity = f => (state.activityMode === 'sport' ? f.namedItem('sport').value : f.namedItem('type').value);
+
+function setActivityMode(kind) {
+  state.activityMode = kind;
+  $$('#activityMode button').forEach(b => b.classList.toggle('active', b.dataset.kind === kind));
+  $('#typeChips').hidden = kind !== 'gym';
+  $('#sportSelect').hidden = kind !== 'sport';
+  updateWorkoutEstimate();
+}
+
 function updateWorkoutEstimate() {
   const f = $('#workoutForm').elements;
   const date = isISO(f.namedItem('date').value) ? f.namedItem('date').value : todayISO();
   const duration = Number(f.namedItem('duration').value) || 0;
   const kg = weightFor(date);
-  $('#workoutBurn').textContent = fmtNum(duration > 0 ? workoutBurn({ type: f.namedItem('type').value, intensity: f.namedItem('intensity').value, duration, date }) : 0);
-  $('#workoutBurnHint').textContent = kg ? `Based on ${kg.toFixed(1)} kg, type and intensity` : `Assumes ${DEFAULT_WEIGHT_KG} kg. Set your weight in Settings`;
+  const w = { type: selectedActivity(f), intensity: f.namedItem('intensity').value, duration, date };
+  const lvl = activityLevel(w);
+  $('#workoutBurn').textContent = fmtNum(duration > 0 ? workoutBurn(w) : 0);
+  $('#workoutBurnHint').textContent = `${lvl.desc} · ${lvl.met} MET (Compendium ${lvl.code}) · `
+    + (kg ? `${kg.toFixed(1)} kg` : `assumes ${DEFAULT_WEIGHT_KG} kg, set your weight in Settings`);
 }
 
 function handleWorkoutSubmit(e) {
   e.preventDefault();
   const f = e.target.elements;
   const date = f.namedItem('date').value;
-  const type = f.namedItem('type').value;
+  const type = selectedActivity(f);
   const intensity = f.namedItem('intensity').value;
   const duration = Number(f.namedItem('duration').value);
   const notes = f.namedItem('notes').value.trim().slice(0, 300);
 
   if (!isISO(date)) return markInvalid(f.namedItem('date'), 'Please choose a date');
   if (date > todayISO()) return markInvalid(f.namedItem('date'), "Workout date can't be in the future");
-  if (!TYPE_MAP[type]) return showToast('Please choose a workout type', 'error');
+  if (!TYPE_MAP[type]) return showToast('Please choose a workout type or sport', 'error');
   if (!INTENSITIES[intensity]) return showToast('Please choose an intensity', 'error');
   if (!Number.isFinite(duration) || duration < 1 || duration > 600) return markInvalid(f.namedItem('duration'), 'Duration must be between 1 and 600 minutes');
 
@@ -900,7 +972,7 @@ function handleWorkoutSubmit(e) {
   persist('workouts');
   f.namedItem('duration').value = '';
   f.namedItem('notes').value = '';
-  showToast(`${type} workout saved · ~${fmtNum(workoutBurn(workout))} kcal`);
+  showToast(`${type}${TYPE_MAP[type].sport ? '' : ' workout'} saved · ~${fmtNum(workoutBurn(workout))} kcal`);
   refresh();
 }
 
@@ -1259,6 +1331,8 @@ function loadDemoData() {
     const dow = parseISO(date).getDay();
     if (dow !== 0 && dow !== 3) {
       workouts.push({ id: uid(), date, type: split[s++ % split.length], duration: rnd(35, 75), intensity: pick(['light', 'moderate', 'moderate', 'vigorous']), notes: pick(notes), createdAt: Date.now() - i * 86400000 });
+    } else if (i > 0) {
+      workouts.push({ id: uid(), date, type: dow === 3 ? 'Padel' : pick(['Running', 'Cycling', 'Tennis']), duration: rnd(50, 90), intensity: pick(['moderate', 'vigorous']), notes: '', createdAt: Date.now() - i * 86400000 });
     }
     Object.keys(menus).forEach((name, idx) => {
       if (i === 0 && idx > 1) return; // today is still in progress
@@ -1438,6 +1512,10 @@ function bindEvents() {
     $('#profileForm').addEventListener(type, renderEnergyPreview);
   });
   $('#addFoodRow').addEventListener('click', () => addFoodRow(true));
+  $('#activityMode').addEventListener('click', e => {
+    const btn = e.target.closest('button[data-kind]');
+    if (btn) setActivityMode(btn.dataset.kind);
+  });
 
   // History filter
   $('#histDate').addEventListener('change', e => { if (isISO(e.target.value)) { state.historyDate = e.target.value; renderHistory(); } });
@@ -1479,6 +1557,8 @@ function init() {
       <input type="radio" name="type" value="${t.name}" ${i === 0 ? 'checked' : ''} />
       <span><i class="dot"></i>${t.name}</span>
     </label>`).join('');
+  $('#sportSelect').innerHTML = SPORT_GROUPS.map(g => `<optgroup label="${g.group}">${g.sports
+    .map(([name]) => `<option value="${name}">${name}</option>`).join('')}</optgroup>`).join('');
 
   bindEvents();
   setView(location.hash.slice(1));

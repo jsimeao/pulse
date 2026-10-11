@@ -1,6 +1,6 @@
 /* Pulse service worker: offline support via stale-while-revalidate caching.
    Bump CACHE when releasing changes so old files are cleaned up. */
-const CACHE = 'pulse-v1';
+const CACHE = 'pulse-v2';
 const APP_SHELL = [
   './',
   './index.html',

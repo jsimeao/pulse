@@ -56,6 +56,7 @@
     <symbol id="i-database" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3" /><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3" /></symbol>
     <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" /></symbol>
     <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></symbol>
+    <symbol id="i-ball" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M5.6 5.6a9 9 0 0 1 0 12.8M18.4 5.6a9 9 0 0 0 0 12.8" /></symbol>
     <symbol id="i-balance" viewBox="0 0 24 24"><path d="M12 3v18M7 21h10M5 7h14M5 7l-3 7a3 3 0 0 0 6 0zM19 7l-3 7a3 3 0 0 0 6 0z" /></symbol>
   </svg>
 
@@ -178,15 +179,20 @@
       <section class="view" id="view-workouts" aria-labelledby="viewTitle">
         <div class="layout">
           <article class="card">
-            <div class="card-head"><h3>Add workout</h3></div>
+            <div class="card-head"><h3>Add workout or sport</h3></div>
             <form id="workoutForm" class="form" novalidate>
               <div class="field">
                 <label for="wDate">Date</label>
                 <input type="date" id="wDate" name="date" required />
               </div>
               <fieldset class="field">
-                <legend>Workout type</legend>
+                <legend>Activity</legend>
+                <div class="segmented seg-block" id="activityMode" role="group" aria-label="Activity kind">
+                  <button type="button" class="active" data-kind="gym">Gym</button>
+                  <button type="button" data-kind="sport">Sports</button>
+                </div>
                 <div class="chip-group" id="typeChips"></div>
+                <select id="sportSelect" name="sport" aria-label="Sport or activity" hidden></select>
               </fieldset>
               <div class="field">
                 <label for="wDuration">Duration (minutes)</label>
@@ -223,7 +229,7 @@
           </article>
 
           <article class="card">
-            <div class="card-head"><h3>Recent workouts</h3><span class="muted" id="workoutMeta"></span></div>
+            <div class="card-head"><h3>Recent activity</h3><span class="muted" id="workoutMeta"></span></div>
             <div id="workoutList"></div>
           </article>
         </div>
